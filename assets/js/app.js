@@ -53,13 +53,20 @@
         fetchJson(ENDPOINTS.universal)
       ]);
 
-      const geo = unwrapResult(geoResult);
+      const defaultGeo = unwrapResult(geoResult);
       const ipv4 = unwrapResult(ipv4Result);
       const ipv6 = unwrapResult(ipv6Result);
       const universal = unwrapResult(universalResult);
+      const preferredIp = getPreferredIp({
+        ipv4: ipv4?.ip,
+        universal: universal?.ip,
+        geo: defaultGeo?.ip,
+        ipv6: ipv6?.ip
+      });
+      const geo = await getGeoForPreferredIp(preferredIp, defaultGeo);
 
-      renderGeoDetails(geo);
-      updatePageTitle(geo?.ip);
+      renderGeoDetails(geo, preferredIp);
+      updatePageTitle(preferredIp);
       renderSeparateAddresses(ipv4, ipv6, universal);
 
       const latitude = parseCoordinate(geo?.latitude);
@@ -114,8 +121,44 @@
     return null;
   }
 
-  function renderGeoDetails(data) {
-    const ip = data?.ip || '-';
+  async function getGeoForPreferredIp(preferredIp, defaultGeo) {
+    if (!preferredIp || preferredIp === defaultGeo?.ip) {
+      return defaultGeo;
+    }
+
+    try {
+      const preferredGeo = await fetchJson(`https://ipapi.co/${encodeURIComponent(preferredIp)}/json/`);
+
+      if (preferredGeo && !preferredGeo.error) {
+        return preferredGeo;
+      }
+    } catch (error) {
+      console.warn('Gegevens veur het veurkeurs-IP konden niet laoden worden.', error);
+    }
+
+    return defaultGeo;
+  }
+
+  function getPreferredIp(addresses) {
+    const candidates = [
+      addresses?.ipv4,
+      addresses?.universal,
+      addresses?.geo,
+      addresses?.ipv6
+    ];
+
+    const ipv4 = candidates.find((ip) => isIPv4(ip));
+
+    if (ipv4) {
+      return ipv4;
+    }
+
+    const ipv6 = candidates.find((ip) => isIPv6(ip));
+    return ipv6 || null;
+  }
+
+  function renderGeoDetails(data, preferredIp) {
+    const ip = preferredIp || data?.ip || '-';
 
     setText(fields.ip, ip);
     setText(fields.version, getIpVersion(ip));
@@ -127,7 +170,6 @@
     setText(fields.org, data?.org || data?.asn || '-');
     setText(fields.timezone, data?.timezone || '-');
   }
-
 
   function updatePageTitle(ip) {
     if (ip) {
@@ -142,7 +184,7 @@
   }
 
   function renderSeparateAddresses(ipv4, ipv6, universal) {
-    setText(fields.ipv4, ipv4?.ip || 'Niet beschikbaor');
+    setText(fields.ipv4, isIPv4(ipv4?.ip) ? ipv4.ip : 'Niet beschikbaor');
     setText(fields.ipv6, isIPv6(ipv6?.ip) ? ipv6.ip : 'Niet beschikbaor');
     setText(fields.universalIp, universal?.ip ? `${universal.ip} (${getIpVersion(universal.ip)})` : 'Niet beschikbaor');
   }
