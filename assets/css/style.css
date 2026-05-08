@@ -31,13 +31,26 @@ html {
 }
 
 body {
-  min-height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
+  overflow-x: hidden;
+  position: relative;
+  isolation: isolate;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
+  background: var(--bg);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: -12vh 0 -28vh;
+  z-index: 0;
+  pointer-events: none;
   background:
     linear-gradient(135deg, rgba(247, 250, 255, 0.88) 0%, rgba(237, 244, 255, 0.84) 50%, rgba(255, 255, 255, 0.9) 100%),
-    url("https://sajvwebsiteblobstorage.blob.core.windows.net/blog/tools-2375/featured-background_blur.jpg") center center / cover no-repeat fixed;
+    url("https://sajvwebsiteblobstorage.blob.core.windows.net/blog/tools-2375/featured-background_blur.jpg") center center / cover no-repeat;
 }
 
 button,
@@ -46,6 +59,8 @@ a {
 }
 
 .page-shell {
+  position: relative;
+  z-index: 1;
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
   padding: 48px 0;
@@ -287,7 +302,7 @@ h2 {
 @media (max-width: 900px) {
   .page-shell {
     width: min(100% - 24px, 720px);
-    padding: 24px 0;
+    padding: 24px 0 56px;
   }
 
   .hero {
