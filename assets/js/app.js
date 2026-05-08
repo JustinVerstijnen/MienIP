@@ -131,7 +131,7 @@
 
   function updatePageTitle(ip) {
     if (ip) {
-      const title = `Dien IP-adres: ${ip}`;
+      const title = `Oe IP-adres: ${ip}`;
       document.title = title;
       pageTitle.textContent = title;
       return;
