@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Bekiek dien actuele publieke IP-adres, plaotsgegevens, IPv4, IPv6 en een kaort op basis van IP-plaotsbepaoling.">
+  <title>Dien IP-adres</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <main class="page-shell">
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <h1 id="page-title">Dien IP-adres: -</h1>
+        <p class="intro">
+          Bekiek dien publieke IP-adres, geschatte IP-plaots, IPv4, IPv6 en een Google Maps kaort op basis van de vonden coördinaoten.
+        </p>
+      </div>
+
+      <div class="hero-actions">
+        <button class="button" id="refreshButton" type="button">Opnij laden</button>
+        <span class="status-pill" id="statusPill">Klaor</span>
+      </div>
+    </section>
+
+    <section class="grid-layout">
+      <article class="card wide-card" aria-labelledby="details-title">
+        <div class="card-header">
+          <div>
+            <h2 id="details-title">IP-gegevens</h2>
+          </div>
+          <span class="small-muted" id="lastUpdated">Nog niet laoden</span>
+        </div>
+
+        <div class="table-wrap">
+          <table class="info-table">
+            <tbody id="ipDetailsTable">
+              <tr>
+                <th scope="row">IP</th>
+                <td data-field="ip">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Versie</th>
+                <td data-field="version">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Laand</th>
+                <td data-field="country">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Streek</th>
+                <td data-field="region">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Plaots</th>
+                <td data-field="city">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Breedtegraod</th>
+                <td data-field="latitude">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Lengtegraod</th>
+                <td data-field="longitude">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Organisaosie</th>
+                <td data-field="org">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Tiedzone</th>
+                <td data-field="timezone">-</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card" aria-labelledby="separate-ip-title">
+        <div class="card-header compact-header">
+          <div>
+            <h2 id="separate-ip-title">IPv4 & IPv6</h2>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="info-table compact-table">
+            <tbody>
+              <tr>
+                <th scope="row">IPv4</th>
+                <td data-field="ipv4">-</td>
+              </tr>
+              <tr>
+                <th scope="row">IPv6</th>
+                <td data-field="ipv6">-</td>
+              </tr>
+              <tr>
+                <th scope="row">Veurkeur</th>
+                <td data-field="universalIp">-</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card map-card" aria-labelledby="map-title">
+        <div class="card-header compact-header">
+          <div>
+            <h2 id="map-title">Plek op Google Maps</h2>
+          </div>
+          <a class="map-link" id="openMapLink" href="#" target="_blank" rel="noopener noreferrer" aria-disabled="true">Kaort opendoen</a>
+        </div>
+
+        <div class="map-frame-wrap" id="mapFrameWrap">
+          <div class="map-placeholder" id="mapPlaceholder">
+            Coördinaoten worden laoden…
+          </div>
+          <iframe
+            class="map-frame"
+            id="mapFrame"
+            title="Google Maps kaort met IP-plaots"
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+            hidden>
+          </iframe>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
