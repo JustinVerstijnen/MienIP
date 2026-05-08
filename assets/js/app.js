@@ -10,10 +10,6 @@
 
   const REQUEST_TIMEOUT_MS = 9000;
 
-  /*
-    Vul hier eventueel dien officiële Google Maps Embed API-key in.
-    Leeg laoten gebruukt de eenvoudige Google Maps iframe URL zonder key.
-  */
   const GOOGLE_MAPS_EMBED_API_KEY = '';
 
   const fields = {
@@ -72,7 +68,7 @@
       if (latitude !== null && longitude !== null) {
         renderMap(latitude, longitude);
       } else {
-        resetMap('Gien geldige coördinaoten vonden veur dit IP-adres.');
+        resetMap('Gien geldige coördinaoten evonden veur dit IP-adres.');
       }
 
       lastUpdated.textContent = `Lest biewerkt: ${new Date().toLocaleString('nl-NL')}`;
@@ -141,8 +137,8 @@
       return;
     }
 
-    document.title = 'Dien IP-adres';
-    pageTitle.textContent = 'Dien IP-adres: -';
+    document.title = 'Oe IP-adres';
+    pageTitle.textContent = 'Oe IP-adres: -';
   }
 
   function renderSeparateAddresses(ipv4, ipv6, universal) {
