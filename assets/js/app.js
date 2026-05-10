@@ -3,12 +3,23 @@
 
   const ENDPOINTS = {
     geo: 'https://ipapi.co/json/',
+    geoForIp: (ip) => `https://ipapi.co/${encodeURIComponent(ip)}/json/`,
     ipv4: 'https://api.ipify.org?format=json',
     ipv6: 'https://api6.ipify.org?format=json',
     universal: 'https://api64.ipify.org?format=json'
   };
 
-  const REQUEST_TIMEOUT_MS = 9000;
+  // Belangrijk voor snelheid:
+  // - Het zichtbare IP-adres krijgt een korte timeout en wordt direct gerenderd.
+  // - Langzamere onderdelen zoals IPv6, geo-details en de kaart mogen later binnenkomen.
+  const TIMEOUTS = {
+    firstIp: 2500,
+    geo: 5500,
+    ipv4: 3500,
+    ipv6: 3500,
+    universal: 2500,
+    preferredGeo: 4500
+  };
 
   const GOOGLE_MAPS_EMBED_API_KEY = '';
 
@@ -35,69 +46,235 @@
   const mapPlaceholder = document.querySelector('#mapPlaceholder');
   const openMapLink = document.querySelector('#openMapLink');
 
+  let activeLoadId = 0;
+
   document.addEventListener('DOMContentLoaded', () => {
     refreshButton.addEventListener('click', loadIpData);
     loadIpData();
   });
 
   async function loadIpData() {
+    const loadId = ++activeLoadId;
+    const state = {
+      preferredIp: null,
+      geo: null,
+      ipv4: null,
+      ipv6: null,
+      universal: null,
+      hasMainIp: false,
+      pending: 4
+    };
+
     setLoading(true);
-    setStatus('Gegevens worden laoden…', 'loading');
-    resetMap('Coördinaoten worden laoden…');
+    setStatus('IP-adres zoeken…', 'loading');
+    resetValuesForNewLoad();
+    resetMap('Coördinaoten worden later elaoden…');
 
-    try {
-      const [geoResult, ipv4Result, ipv6Result, universalResult] = await Promise.allSettled([
-        fetchJson(ENDPOINTS.geo),
-        fetchJson(ENDPOINTS.ipv4),
-        fetchJson(ENDPOINTS.ipv6),
-        fetchJson(ENDPOINTS.universal)
-      ]);
+    const geoPromise = fetchJson(ENDPOINTS.geo, TIMEOUTS.geo);
+    const ipv4Promise = fetchJson(ENDPOINTS.ipv4, TIMEOUTS.ipv4);
+    const ipv6Promise = fetchJson(ENDPOINTS.ipv6, TIMEOUTS.ipv6);
+    const universalPromise = fetchJson(ENDPOINTS.universal, TIMEOUTS.universal);
 
-      const defaultGeo = unwrapResult(geoResult);
-      const ipv4 = unwrapResult(ipv4Result);
-      const ipv6 = unwrapResult(ipv6Result);
-      const universal = unwrapResult(universalResult);
-      const preferredIp = getPreferredIp({
-        ipv4: ipv4?.ip,
-        universal: universal?.ip,
-        geo: defaultGeo?.ip,
-        ipv6: ipv6?.ip
+    // Laat zo snel mogelijk een eerste IP-adres zien. Dit hoeft nog niet het definitieve
+    // voorkeursadres te zijn; zodra IPv4 of betere informatie binnenkomt, werken we het bij.
+    showFirstAvailableIp(loadId, state, [
+      universalPromise,
+      ipv4Promise,
+      geoPromise,
+      ipv6Promise
+    ]);
+
+    handleResult(loadId, state, 'universal', universalPromise);
+    handleResult(loadId, state, 'ipv4', ipv4Promise);
+    handleResult(loadId, state, 'ipv6', ipv6Promise);
+    handleResult(loadId, state, 'geo', geoPromise);
+  }
+
+  async function showFirstAvailableIp(loadId, state, promises) {
+    const wrappedPromises = promises.map((promise) => promise.then(
+      (data) => data?.ip || null,
+      () => null
+    ));
+
+    const firstIp = await firstNonEmpty(wrappedPromises, TIMEOUTS.firstIp);
+
+    if (!isCurrentLoad(loadId) || !firstIp) {
+      return;
+    }
+
+    state.hasMainIp = true;
+    state.preferredIp = firstIp;
+    renderMainIp(firstIp);
+    setText(fields.ip, firstIp);
+    setText(fields.version, getIpVersion(firstIp));
+    setStatus('IP-adres gevonden, details volgen…', 'loading');
+  }
+
+  async function firstNonEmpty(promises, timeoutMs) {
+    return new Promise((resolve) => {
+      let settledCount = 0;
+      let resolved = false;
+      const timer = window.setTimeout(() => finish(null), timeoutMs);
+
+      promises.forEach((promise) => {
+        promise.then((value) => {
+          settledCount += 1;
+
+          if (value) {
+            finish(value);
+            return;
+          }
+
+          if (settledCount === promises.length) {
+            finish(null);
+          }
+        });
       });
-      const geo = await getGeoForPreferredIp(preferredIp, defaultGeo);
 
-      renderGeoDetails(geo, preferredIp);
-      updatePageTitle(preferredIp);
-      renderSeparateAddresses(ipv4, ipv6, universal);
+      function finish(value) {
+        if (resolved) {
+          return;
+        }
 
-      const latitude = parseCoordinate(geo?.latitude);
-      const longitude = parseCoordinate(geo?.longitude);
+        resolved = true;
+        window.clearTimeout(timer);
+        resolve(value);
+      }
+    });
+  }
 
-      if (latitude !== null && longitude !== null) {
-        renderMap(latitude, longitude);
-      } else {
-        resetMap('Gien geldige coördinaoten evonden veur dit IP-adres.');
+  async function handleResult(loadId, state, key, promise) {
+    try {
+      const data = await promise;
+
+      if (!isCurrentLoad(loadId)) {
+        return;
       }
 
-      lastUpdated.textContent = `Lest biewerkt: ${new Date().toLocaleString('nl-NL')}`;
-      setStatus('Laoden', 'success');
+      state[key] = data;
+      renderPartialResult(state, key, data);
     } catch (error) {
-      console.error(error);
-      updatePageTitle(null);
-      setStatus('Fout bie \'t laoden', 'error');
-      resetMap('De IP-gegevens kunden niet laoden worden. Prebeer het opnij.');
+      console.warn(`${key} kon niet elaoden worden.`, error);
+
+      if (!isCurrentLoad(loadId)) {
+        return;
+      }
+
+      renderFailedPartialResult(key);
     } finally {
-      setLoading(false);
+      if (!isCurrentLoad(loadId)) {
+        return;
+      }
+
+      state.pending -= 1;
+      await finalizeWhenReady(loadId, state);
     }
   }
 
-  async function fetchJson(url) {
+  function renderPartialResult(state, key, data) {
+    if (key === 'ipv4') {
+      setText(fields.ipv4, isIPv4(data?.ip) ? data.ip : 'Niet beschikbaor');
+    }
+
+    if (key === 'ipv6') {
+      setText(fields.ipv6, isIPv6(data?.ip) ? data.ip : 'Niet beschikbaor');
+    }
+
+    if (key === 'universal') {
+      setText(fields.universalIp, data?.ip ? `${data.ip} (${getIpVersion(data.ip)})` : 'Niet beschikbaor');
+    }
+
+    const preferredIp = getPreferredIp({
+      ipv4: state.ipv4?.ip,
+      universal: state.universal?.ip,
+      geo: state.geo?.ip,
+      ipv6: state.ipv6?.ip
+    });
+
+    if (preferredIp && preferredIp !== state.preferredIp) {
+      state.preferredIp = preferredIp;
+      state.hasMainIp = true;
+      renderMainIp(preferredIp);
+      setText(fields.ip, preferredIp);
+      setText(fields.version, getIpVersion(preferredIp));
+    }
+
+    if (key === 'geo') {
+      renderGeoDetails(data, state.preferredIp || data?.ip);
+      renderMapFromGeo(data);
+      lastUpdated.textContent = `Lest biewerkt: ${new Date().toLocaleString('nl-NL')}`;
+    }
+  }
+
+  function renderFailedPartialResult(key) {
+    if (key === 'ipv4') {
+      setText(fields.ipv4, 'Niet beschikbaor');
+    }
+
+    if (key === 'ipv6') {
+      setText(fields.ipv6, 'Niet beschikbaor');
+    }
+
+    if (key === 'universal') {
+      setText(fields.universalIp, 'Niet beschikbaor');
+    }
+  }
+
+  async function finalizeWhenReady(loadId, state) {
+    const isDone = state.pending <= 0;
+
+    if (!isDone) {
+      return;
+    }
+
+    if (!state.hasMainIp) {
+      renderMainIp(null);
+      setStatus('Fout bie \'t laoden', 'error');
+      setLoading(false);
+      resetMap('De IP-gegevens kunden niet laoden worden. Prebeer het opnij.');
+      return;
+    }
+
+    const preferredIp = state.preferredIp;
+    let geo = state.geo;
+
+    // Alleen een extra geo-lookup doen als het getoonde voorkeurs-IP anders is dan de
+    // geo-call. Dit voorkomt onnodige vertraging tijdens de eerste weergave.
+    if (preferredIp && geo?.ip && preferredIp !== geo.ip) {
+      try {
+        const preferredGeo = await fetchJson(ENDPOINTS.geoForIp(preferredIp), TIMEOUTS.preferredGeo);
+
+        if (isCurrentLoad(loadId) && preferredGeo && !preferredGeo.error) {
+          geo = preferredGeo;
+        }
+      } catch (error) {
+        console.warn('Geo-details veur het veurkeurs-IP konden niet elaoden worden.', error);
+      }
+    }
+
+    if (!isCurrentLoad(loadId)) {
+      return;
+    }
+
+    if (geo) {
+      renderGeoDetails(geo, preferredIp);
+      renderMapFromGeo(geo);
+    }
+
+    lastUpdated.textContent = `Lest biewerkt: ${new Date().toLocaleString('nl-NL')}`;
+    setStatus('Laoden', 'success');
+    setLoading(false);
+  }
+
+  async function fetchJson(url, timeoutMs) {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(url, {
         method: 'GET',
         signal: controller.signal,
+        cache: 'no-store',
         headers: {
           Accept: 'application/json'
         }
@@ -111,32 +288,6 @@
     } finally {
       window.clearTimeout(timer);
     }
-  }
-
-  function unwrapResult(result) {
-    if (result.status === 'fulfilled') {
-      return result.value;
-    }
-
-    return null;
-  }
-
-  async function getGeoForPreferredIp(preferredIp, defaultGeo) {
-    if (!preferredIp || preferredIp === defaultGeo?.ip) {
-      return defaultGeo;
-    }
-
-    try {
-      const preferredGeo = await fetchJson(`https://ipapi.co/${encodeURIComponent(preferredIp)}/json/`);
-
-      if (preferredGeo && !preferredGeo.error) {
-        return preferredGeo;
-      }
-    } catch (error) {
-      console.warn('Gegevens veur het veurkeurs-IP konden niet laoden worden.', error);
-    }
-
-    return defaultGeo;
   }
 
   function getPreferredIp(addresses) {
@@ -171,7 +322,7 @@
     setText(fields.timezone, data?.timezone || '-');
   }
 
-  function updatePageTitle(ip) {
+  function renderMainIp(ip) {
     if (ip) {
       const title = `Oe IP-adres: ${ip}`;
       document.title = title;
@@ -183,10 +334,16 @@
     pageTitle.textContent = 'Oe IP-adres: -';
   }
 
-  function renderSeparateAddresses(ipv4, ipv6, universal) {
-    setText(fields.ipv4, isIPv4(ipv4?.ip) ? ipv4.ip : 'Niet beschikbaor');
-    setText(fields.ipv6, isIPv6(ipv6?.ip) ? ipv6.ip : 'Niet beschikbaor');
-    setText(fields.universalIp, universal?.ip ? `${universal.ip} (${getIpVersion(universal.ip)})` : 'Niet beschikbaor');
+  function renderMapFromGeo(geo) {
+    const latitude = parseCoordinate(geo?.latitude);
+    const longitude = parseCoordinate(geo?.longitude);
+
+    if (latitude !== null && longitude !== null) {
+      renderMap(latitude, longitude);
+      return;
+    }
+
+    resetMap('Gien geldige coördinaoten evonden veur dit IP-adres.');
   }
 
   function renderMap(latitude, longitude) {
@@ -222,6 +379,24 @@
     });
 
     return `https://maps.google.com/maps?${params.toString()}`;
+  }
+
+  function resetValuesForNewLoad() {
+    renderMainIp(null);
+    lastUpdated.textContent = 'Nog niet elaoden';
+
+    setText(fields.ip, 'Wordt elaoden…');
+    setText(fields.version, '-');
+    setText(fields.country, 'Volgt…');
+    setText(fields.region, 'Volgt…');
+    setText(fields.city, 'Volgt…');
+    setText(fields.latitude, 'Volgt…');
+    setText(fields.longitude, 'Volgt…');
+    setText(fields.org, 'Volgt…');
+    setText(fields.timezone, 'Volgt…');
+    setText(fields.ipv4, 'Wordt elaoden…');
+    setText(fields.ipv6, 'Wordt elaoden…');
+    setText(fields.universalIp, 'Wordt elaoden…');
   }
 
   function resetMap(message) {
@@ -294,6 +469,10 @@
 
     const trimmedIp = ip.trim();
     return trimmedIp.includes(':') && /^[0-9a-fA-F:.]+$/.test(trimmedIp);
+  }
+
+  function isCurrentLoad(loadId) {
+    return loadId === activeLoadId;
   }
 
   function setLoading(isLoading) {
