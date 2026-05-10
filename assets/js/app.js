@@ -75,8 +75,6 @@
     const ipv6Promise = fetchJson(ENDPOINTS.ipv6, TIMEOUTS.ipv6);
     const universalPromise = fetchJson(ENDPOINTS.universal, TIMEOUTS.universal);
 
-    // Laat zo snel mogelijk een eerste IP-adres zien. Dit hoeft nog niet het definitieve
-    // voorkeursadres te zijn; zodra IPv4 of betere informatie binnenkomt, werken we het bij.
     showFirstAvailableIp(loadId, state, [
       universalPromise,
       ipv4Promise,
@@ -107,7 +105,7 @@
     renderMainIp(firstIp);
     setText(fields.ip, firstIp);
     setText(fields.version, getIpVersion(firstIp));
-    setStatus('IP-adres gevonden, details volgen…', 'loading');
+    setStatus('Ie Pee adres evonden, nou de rest noh…', 'loading');
   }
 
   async function firstNonEmpty(promises, timeoutMs) {
