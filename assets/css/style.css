@@ -86,14 +86,23 @@ h2 {
 }
 
 h1 {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px 14px;
   max-width: 820px;
   font-size: clamp(2rem, 5vw, 4.1rem);
-  letter-spacing: -0.055em;
+  letter-spacing: 0;
 }
 
 h2 {
   font-size: clamp(1.25rem, 2vw, 1.55rem);
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
+}
+
+.main-ip-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .intro {
@@ -136,6 +145,45 @@ h2 {
   cursor: wait;
   opacity: 0.72;
   transform: none;
+}
+
+.copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(35, 103, 209, 0.26);
+  border-radius: 999px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.copy-button:hover {
+  color: #ffffff;
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.copy-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.copy-button:disabled:hover {
+  color: var(--primary);
+  border-color: rgba(35, 103, 209, 0.26);
+  background: var(--primary-soft);
+}
+
+.copy-button-main {
+  transform: translateY(-0.18em);
 }
 
 .status-pill {
@@ -238,6 +286,17 @@ h2 {
 .info-table td {
   color: #17283d;
   overflow-wrap: anywhere;
+}
+
+.info-table td:has(.copy-button-table) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-value {
+  min-width: 0;
 }
 
 .compact-table th {
@@ -354,7 +413,12 @@ h2 {
   }
 
   .info-table td {
+    display: block;
     padding-top: 6px;
+  }
+
+  .info-table td:has(.copy-button-table) {
+    display: flex;
   }
 
   .info-table tr {

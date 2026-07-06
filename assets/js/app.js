@@ -2,11 +2,28 @@
   'use strict';
 
   const ENDPOINTS = {
-    geo: 'https://ipapi.co/json/',
-    geoForIp: (ip) => `https://ipapi.co/${encodeURIComponent(ip)}/json/`,
-    ipv4: 'https://api.ipify.org?format=json',
-    ipv6: 'https://api6.ipify.org?format=json',
-    universal: 'https://api64.ipify.org?format=json'
+    geo: [
+      { url: 'https://ipapi.co/json/', normalize: normalizeIpApiGeo },
+      { url: 'https://ipwho.is/', normalize: normalizeIpWhoIsGeo }
+    ],
+    geoForIp: (ip) => [
+      { url: `https://ipapi.co/${encodeURIComponent(ip)}/json/`, normalize: normalizeIpApiGeo },
+      { url: `https://ipwho.is/${encodeURIComponent(ip)}`, normalize: normalizeIpWhoIsGeo }
+    ],
+    ipv4: [
+      { url: 'https://api.ipify.org?format=json', normalize: normalizeIpJson },
+      { url: 'https://api.seeip.org/jsonip?', normalize: normalizeIpJson },
+      { url: 'https://ipv4.icanhazip.com/', responseType: 'text', normalize: normalizePlainIp }
+    ],
+    ipv6: [
+      { url: 'https://api6.ipify.org?format=json', normalize: normalizeIpJson },
+      { url: 'https://ipv6.icanhazip.com/', responseType: 'text', normalize: normalizePlainIp }
+    ],
+    universal: [
+      { url: 'https://api64.ipify.org?format=json', normalize: normalizeIpJson },
+      { url: 'https://api.seeip.org/jsonip?', normalize: normalizeIpJson },
+      { url: 'https://icanhazip.com/', responseType: 'text', normalize: normalizePlainIp }
+    ]
   };
 
   // Belangrijk voor snelheid:
@@ -23,22 +40,12 @@
 
   const GOOGLE_MAPS_EMBED_API_KEY = '';
 
-  const fields = {
-    ip: document.querySelector('[data-field="ip"]'),
-    version: document.querySelector('[data-field="version"]'),
-    country: document.querySelector('[data-field="country"]'),
-    region: document.querySelector('[data-field="region"]'),
-    city: document.querySelector('[data-field="city"]'),
-    latitude: document.querySelector('[data-field="latitude"]'),
-    longitude: document.querySelector('[data-field="longitude"]'),
-    org: document.querySelector('[data-field="org"]'),
-    timezone: document.querySelector('[data-field="timezone"]'),
-    ipv4: document.querySelector('[data-field="ipv4"]'),
-    ipv6: document.querySelector('[data-field="ipv6"]'),
-    universalIp: document.querySelector('[data-field="universalIp"]')
-  };
+  const fields = {};
+  const copyButtonsByField = {};
 
   const pageTitle = document.querySelector('#page-title');
+  const mainIpValue = document.querySelector('#mainIpValue');
+  const copyMainIpButton = document.querySelector('#copyMainIpButton');
   const refreshButton = document.querySelector('#refreshButton');
   const statusPill = document.querySelector('#statusPill');
   const lastUpdated = document.querySelector('#lastUpdated');
@@ -48,8 +55,12 @@
 
   let activeLoadId = 0;
 
+  enhanceTableCopyButtons();
+  syncCopyButton(copyMainIpButton, '');
+
   document.addEventListener('DOMContentLoaded', () => {
     refreshButton.addEventListener('click', loadIpData);
+    copyMainIpButton.addEventListener('click', () => copyFromButton(copyMainIpButton));
     loadIpData();
   });
 
@@ -70,10 +81,10 @@
     resetValuesForNewLoad();
     resetMap('Coördinaoten worden later elaoden…');
 
-    const geoPromise = fetchJson(ENDPOINTS.geo, TIMEOUTS.geo);
-    const ipv4Promise = fetchJson(ENDPOINTS.ipv4, TIMEOUTS.ipv4);
-    const ipv6Promise = fetchJson(ENDPOINTS.ipv6, TIMEOUTS.ipv6);
-    const universalPromise = fetchJson(ENDPOINTS.universal, TIMEOUTS.universal);
+    const geoPromise = fetchAny(ENDPOINTS.geo, TIMEOUTS.geo);
+    const ipv4Promise = fetchAny(ENDPOINTS.ipv4, TIMEOUTS.ipv4);
+    const ipv6Promise = fetchAny(ENDPOINTS.ipv6, TIMEOUTS.ipv6);
+    const universalPromise = fetchAny(ENDPOINTS.universal, TIMEOUTS.universal);
 
     showFirstAvailableIp(loadId, state, [
       universalPromise,
@@ -105,7 +116,10 @@
     renderMainIp(firstIp);
     setText(fields.ip, firstIp);
     setText(fields.version, getIpVersion(firstIp));
-    setStatus('Ie Pee adres evonden, nou de rest noh…', 'loading');
+
+    if (state.pending > 0) {
+      setStatus('Ie Pee adres evonden, nou de rest noh…', 'loading');
+    }
   }
 
   async function firstNonEmpty(promises, timeoutMs) {
@@ -240,7 +254,7 @@
     // geo-call. Dit voorkomt onnodige vertraging tijdens de eerste weergave.
     if (preferredIp && geo?.ip && preferredIp !== geo.ip) {
       try {
-        const preferredGeo = await fetchJson(ENDPOINTS.geoForIp(preferredIp), TIMEOUTS.preferredGeo);
+        const preferredGeo = await fetchAny(ENDPOINTS.geoForIp(preferredIp), TIMEOUTS.preferredGeo);
 
         if (isCurrentLoad(loadId) && preferredGeo && !preferredGeo.error) {
           geo = preferredGeo;
@@ -264,17 +278,61 @@
     setLoading(false);
   }
 
-  async function fetchJson(url, timeoutMs) {
+  async function fetchAny(endpoints, timeoutMs) {
+    const candidates = Array.isArray(endpoints) ? endpoints : [endpoints];
+
+    return new Promise((resolve, reject) => {
+      let rejectedCount = 0;
+      let lastError = null;
+      let resolved = false;
+      const timer = window.setTimeout(() => {
+        finish(null, new Error('Alle endpoints duurden te lang.'));
+      }, timeoutMs + 250);
+
+      candidates.forEach((endpoint) => {
+        fetchEndpoint(endpoint, timeoutMs).then(
+          (data) => finish(data),
+          (error) => {
+            rejectedCount += 1;
+            lastError = error;
+
+            if (rejectedCount === candidates.length) {
+              finish(null, lastError || new Error('Gien endpoint gaf geldige data terug.'));
+            }
+          }
+        );
+      });
+
+      function finish(data, error) {
+        if (resolved) {
+          return;
+        }
+
+        resolved = true;
+        window.clearTimeout(timer);
+
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(data);
+      }
+    });
+  }
+
+  async function fetchEndpoint(endpoint, timeoutMs) {
+    const config = typeof endpoint === 'string' ? { url: endpoint } : endpoint;
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(config.url, {
         method: 'GET',
         signal: controller.signal,
         cache: 'no-store',
         headers: {
-          Accept: 'application/json'
+          Accept: config.responseType === 'text' ? 'text/plain, */*' : 'application/json, text/plain, */*'
         }
       });
 
@@ -282,7 +340,8 @@
         throw new Error(`Request mislukt met status ${response.status}`);
       }
 
-      return await response.json();
+      const data = config.responseType === 'text' ? await response.text() : await response.json();
+      return config.normalize ? config.normalize(data) : data;
     } finally {
       window.clearTimeout(timer);
     }
@@ -324,12 +383,16 @@
     if (ip) {
       const title = `Oe IP-adres: ${ip}`;
       document.title = title;
-      pageTitle.textContent = title;
+      mainIpValue.textContent = ip;
+      pageTitle.setAttribute('aria-label', title);
+      syncCopyButton(copyMainIpButton, ip);
       return;
     }
 
     document.title = 'Oe IP-adres';
-    pageTitle.textContent = 'Oe IP-adres: -';
+    mainIpValue.textContent = '-';
+    pageTitle.setAttribute('aria-label', 'Oe IP-adres: -');
+    syncCopyButton(copyMainIpButton, '');
   }
 
   function renderMapFromGeo(geo) {
@@ -424,7 +487,152 @@
       return;
     }
 
-    element.textContent = formatValue(value);
+    const formattedValue = formatValue(value);
+    element.textContent = formattedValue;
+    syncCopyButton(copyButtonsByField[element.dataset.fieldName], formattedValue);
+  }
+
+  function enhanceTableCopyButtons() {
+    document.querySelectorAll('td[data-field]').forEach((cell) => {
+      const fieldName = cell.dataset.field;
+      const value = cell.textContent;
+      const valueElement = document.createElement('span');
+      const copyButton = document.createElement('button');
+
+      valueElement.className = 'field-value';
+      valueElement.dataset.fieldName = fieldName;
+      valueElement.textContent = value;
+
+      copyButton.className = 'copy-button copy-button-table';
+      copyButton.type = 'button';
+      copyButton.textContent = 'Kopieer';
+      copyButton.addEventListener('click', () => copyFromButton(copyButton));
+
+      cell.textContent = '';
+      cell.append(valueElement, copyButton);
+
+      fields[fieldName] = valueElement;
+      copyButtonsByField[fieldName] = copyButton;
+      syncCopyButton(copyButton, value);
+    });
+  }
+
+  async function copyFromButton(button) {
+    const value = button?.dataset.copyValue || '';
+
+    if (!value) {
+      return;
+    }
+
+    const originalText = button.textContent;
+
+    try {
+      await copyToClipboard(value);
+      flashCopyButton(button, 'Gekopieerd', originalText);
+    } catch (error) {
+      console.warn('Kopiëren is mislukt.', error);
+      flashCopyButton(button, 'Mislukt', originalText);
+    }
+  }
+
+  async function copyToClipboard(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    const didCopy = document.execCommand('copy');
+    textarea.remove();
+
+    if (!didCopy) {
+      throw new Error('Fallback kopiëren werd geweigerd.');
+    }
+  }
+
+  function flashCopyButton(button, text, originalText) {
+    button.textContent = text;
+    window.clearTimeout(button.copyResetTimer);
+    button.copyResetTimer = window.setTimeout(() => {
+      button.textContent = originalText;
+    }, 1400);
+  }
+
+  function syncCopyButton(button, value) {
+    if (!button) {
+      return;
+    }
+
+    const copyValue = getCopyableValue(value);
+    button.dataset.copyValue = copyValue;
+    button.disabled = !copyValue;
+    button.setAttribute('aria-label', copyValue ? `Kopieer ${copyValue}` : 'Niks te kopiëren');
+  }
+
+  function getCopyableValue(value) {
+    const text = formatValue(value).trim();
+    const blockedValues = ['-', 'Volgt…', 'Wordt elaoden…', 'Niet beschikbaor'];
+
+    if (!text || blockedValues.includes(text)) {
+      return '';
+    }
+
+    return text;
+  }
+
+  function normalizeIpJson(data) {
+    const ip = data?.ip || data?.query;
+
+    if (!isIPv4(ip) && !isIPv6(ip)) {
+      throw new Error('Gien geldig IP-adres ontvangen.');
+    }
+
+    return { ip };
+  }
+
+  function normalizePlainIp(data) {
+    const ip = String(data || '').trim();
+
+    if (!isIPv4(ip) && !isIPv6(ip)) {
+      throw new Error('Gien geldig IP-adres ontvangen.');
+    }
+
+    return { ip };
+  }
+
+  function normalizeIpApiGeo(data) {
+    if (!data || data.error) {
+      throw new Error(data?.reason || 'Geo endpoint gaf gien geldige data terug.');
+    }
+
+    return data;
+  }
+
+  function normalizeIpWhoIsGeo(data) {
+    if (!data || data.success === false) {
+      throw new Error(data?.message || 'Geo endpoint gaf gien geldige data terug.');
+    }
+
+    return {
+      ip: data.ip,
+      country_name: data.country,
+      country: data.country_code,
+      region: data.region,
+      city: data.city,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      org: data.connection?.org || data.connection?.isp,
+      timezone: data.timezone?.id
+    };
   }
 
   function getIpVersion(ip) {
